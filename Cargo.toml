@@ -1,0 +1,9 @@
+[package]
+name = "image-to-webp"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+clap = { version = "4.5.29", features = ["derive"] }
+image = "0.25.5"
+libwebp-sys = "0.12.1"
