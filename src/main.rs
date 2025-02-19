@@ -74,38 +74,70 @@ impl Cli {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Cli::parse();
+
     let output_path: PathBuf = args
         .output_path()
         .map_err(|_| "Output file is invalid")
         .unwrap();
-
     let input_path: PathBuf = args.input_path().map_err(|error| error).unwrap();
-
     let config = generate_config(&args);
 
     let now = Instant::now();
 
-    convert_recursively(&input_path, &output_path, &config, 0);
+    let (input_size, output_size) = convert_recursively(&input_path, &output_path, &config, 0);
 
-    let elapsed_time = now.elapsed();
-    println!("Running took {} seconds.", elapsed_time.as_millis());
+    println!(
+        "Input size: {} -- Output size: {}. Duration: {}",
+        format_size(input_size),
+        format_size(output_size),
+        now.elapsed().as_millis()
+    );
 
     Ok(())
 }
 
+const GB: u64 = 2_u64.pow(30);
+const MB: u64 = 2_u64.pow(20);
+const KB: u64 = 2_u64.pow(10);
+fn format_size(size: u64) -> String {
+    if size > GB {
+        format!("{:.2} GB", size as f64 / GB as f64)
+    } else if size > MB {
+        format!("{:.2} MB", size as f64 / MB as f64)
+    } else if size > KB {
+        format!("{:.2} KB", size as f64 / KB as f64)
+    } else {
+        format!("{:.2} B", size)
+    }
+}
+
 const MAX_LEVEL: u8 = 5;
+/// Returns (input_size, output_size)
 fn convert_recursively(
     input_path: &PathBuf,
     output_path: &PathBuf,
     config: &WebPConfig,
     level: u8,
-) {
+) -> (u64, u64) {
+    let mut input_size: u64 = 0;
+    let mut output_size: u64 = 0;
+
     if level >= MAX_LEVEL {
         println!("Max level reached. Returning...");
-        return;
+        return (input_size, output_size);
     }
 
-    if input_path.is_dir() {
+    if input_path.is_file() {
+        let converted_file =
+            convert_file(&input_path, &output_path, &config).map_err(|error| error);
+        if converted_file.is_err() {
+            let _ = converted_file.inspect_err(|f| println!("{:?}", f));
+            return (input_size, output_size);
+        }
+
+        input_size += &input_path.metadata().unwrap().len();
+        output_size += converted_file.unwrap();
+    } else {
         let input_dir = input_path.read_dir().map_err(|error| error).unwrap();
         for path in input_dir {
             if path.is_err() {
@@ -114,17 +146,15 @@ fn convert_recursively(
 
             let path = path.unwrap().path();
 
-            if path.is_dir() {
-                let output_path_with_dir = &output_path.join(&path.file_name().unwrap());
-                println!("{:?}", output_path_with_dir);
+            let output_path_with_dir = &output_path.join(&path.file_name().unwrap());
+            let (temp_input_size, temp_output_size) =
                 convert_recursively(&path, &output_path_with_dir, config, level + 1);
-            } else {
-                let _ = convert_file(&path, &output_path, &config);
-            }
+            input_size += temp_input_size;
+            output_size += temp_output_size;
         }
-    } else {
-        let _ = convert_file(&input_path, &output_path, &config);
     }
+
+    return (input_size, output_size);
 }
 
 fn generate_config(args: &Cli) -> WebPConfig {
@@ -138,11 +168,12 @@ fn generate_config(args: &Cli) -> WebPConfig {
     config
 }
 
+/// Returns new file size
 fn convert_file(
     input: &PathBuf,
     output: &PathBuf,
     config: &WebPConfig,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<u64, Box<dyn std::error::Error>> {
     let now = Instant::now();
 
     let file_name = &input
@@ -151,7 +182,11 @@ fn convert_file(
         .to_string_lossy()
         .to_string();
 
-    let img = open_image_from_path(input.clone()).unwrap();
+    let img = open_image_from_path(input.clone());
+    if img.is_none() {
+        Err(format!("{:?} is not an image", &input.file_name().unwrap()))?
+    }
+    let img = img.unwrap();
 
     let result = image_to_webp(img, &config);
     let webp = result.map_err(|_| "Failed to convert image")?;
@@ -173,7 +208,7 @@ fn convert_file(
         elapsed_time.as_millis()
     );
 
-    Ok(())
+    Ok(webp.len() as u64)
 }
 
 pub fn open_image_from_path(path: PathBuf) -> Option<DynamicImage> {
