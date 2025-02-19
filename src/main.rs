@@ -4,6 +4,7 @@ use libwebp_sys::{
     VP8StatusCode, WebPConfig, WebPEncodingError, WebPFree, WebPMemoryWrite, WebPMemoryWriterInit,
     WebPPicture, WebPPictureFree, WebPPictureImportRGB, WebPValidateConfig,
 };
+use rayon::prelude::*;
 use std::{
     env,
     fmt::{Debug, Error, Formatter},
@@ -138,20 +139,35 @@ fn convert_recursively(
         input_size += &input_path.metadata().unwrap().len();
         output_size += converted_file.unwrap();
     } else {
-        let input_dir = input_path.read_dir().map_err(|error| error).unwrap();
-        for path in input_dir {
-            if path.is_err() {
-                continue;
-            }
+        let input_dir_entries: Vec<_> = input_path
+            .read_dir()
+            .map_err(|error| error)
+            .unwrap()
+            .collect();
 
-            let path = path.unwrap().path();
+        let (temp_input_size, temp_output_size) = input_dir_entries
+            .into_par_iter()
+            .map(|path| {
+                if path.is_err() {
+                    return (0, 0);
+                }
+                let path = path.unwrap().path();
 
-            let output_path_with_dir = &output_path.join(&path.file_name().unwrap());
-            let (temp_input_size, temp_output_size) =
-                convert_recursively(&path, &output_path_with_dir, config, level + 1);
-            input_size += temp_input_size;
-            output_size += temp_output_size;
-        }
+                let output_path_with_dir = &output_path.join(&path.file_name().unwrap());
+                return convert_recursively(&path, &output_path_with_dir, config, level + 1);
+            })
+            .reduce(
+                || (input_size, output_size),
+                |input_size_map, output_size_map| {
+                    (
+                        input_size_map.0 + output_size_map.0,
+                        input_size_map.1 + output_size_map.1,
+                    )
+                },
+            );
+
+        input_size += temp_input_size;
+        output_size += temp_output_size;
     }
 
     return (input_size, output_size);
