@@ -159,7 +159,11 @@ fn convert_recursively(
 
 fn generate_config(args: &Cli) -> WebPConfig {
     let mut config: WebPConfig = WebPConfig::new().unwrap();
-    config.lossless = args.lossless as i32;
+    config.lossless = if args.quality == 100 {
+        args.lossless
+    } else {
+        0
+    } as i32;
     config.quality = args.quality as f32;
     config.method = args.method as i32;
     // Multi threading
