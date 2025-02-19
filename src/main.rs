@@ -195,11 +195,21 @@ fn convert_file(
     let result = image_to_webp(img, &config);
     let webp = result.map_err(|_| "Failed to convert image")?;
 
-    let output_path = output.join(file_name).with_extension("webp");
+    let output_path = if !(&output).exists() {
+        if output.extension().is_some() {
+            fs::create_dir_all(&output.parent().unwrap())?;
+        } else {
+            fs::create_dir_all(&output)?;
+        }
 
-    if !(&output_path).exists() {
-        fs::create_dir_all(&output_path.parent().unwrap())?;
-    }
+        output
+            .parent()
+            .unwrap()
+            .join(file_name)
+            .with_extension("webp")
+    } else {
+        output.join(file_name).with_extension("webp")
+    };
 
     fs::write(&output_path, &*webp).unwrap();
     let elapsed_time = now.elapsed();
