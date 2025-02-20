@@ -32,6 +32,9 @@ struct Cli {
 
     #[arg(short, long, default_value_t = 6)]
     method: u8,
+
+    #[arg(long, default_value_t = 8)]
+    max_depth: u16,
 }
 
 impl Cli {
@@ -73,6 +76,11 @@ impl Cli {
     }
 }
 
+struct Depth {
+    current: u16,
+    max: u16,
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Cli::parse();
 
@@ -85,7 +93,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let now = Instant::now();
 
-    let (input_size, output_size) = convert_recursively(&input_path, &output_path, &config, 0);
+    let depth = Depth {
+        current: 0,
+        max: args.max_depth,
+    };
+    let (input_size, output_size) = convert_recursively(&input_path, &output_path, &config, depth);
 
     println!(
         "Input size: {} -- Output size: {}. Duration: {}",
@@ -112,18 +124,17 @@ fn format_size(size: u64) -> String {
     }
 }
 
-const MAX_LEVEL: u8 = 5;
 /// Returns (input_size, output_size)
 fn convert_recursively(
     input_path: &PathBuf,
     output_path: &PathBuf,
     config: &WebPConfig,
-    level: u8,
+    depth: Depth,
 ) -> (u64, u64) {
     let mut input_size: u64 = 0;
     let mut output_size: u64 = 0;
 
-    if level >= MAX_LEVEL {
+    if depth.current >= depth.max {
         println!("Max level reached. Returning...");
         return (input_size, output_size);
     }
@@ -154,7 +165,11 @@ fn convert_recursively(
                 let path = path.unwrap().path();
 
                 let output_path_with_dir = &output_path.join(&path.file_name().unwrap());
-                return convert_recursively(&path, &output_path_with_dir, config, level + 1);
+                let new_depth = Depth {
+                    current: depth.current + 1,
+                    max: depth.max,
+                };
+                return convert_recursively(&path, &output_path_with_dir, config, new_depth);
             })
             .reduce(
                 || (input_size, output_size),
