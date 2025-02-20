@@ -91,7 +91,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "Input size: {} -- Output size: {}. Duration: {}",
         format_size(input_size),
         format_size(output_size),
-        now.elapsed().as_millis()
+        format_millis(now.elapsed().as_millis() as u64)
     );
 
     Ok(())
@@ -239,6 +239,20 @@ fn convert_file(
     );
 
     Ok(webp.len() as u64)
+}
+
+fn format_millis(ms: u64) -> String {
+    if ms < 1000 {
+        return format!("{} ms", ms);
+    }
+
+    let seconds = ms as f64 / 1000.0;
+
+    if seconds < 60.0 {
+        return format!("{:.1} s", seconds);
+    }
+
+    return format!("{} min {:.1} s", (seconds / 60.0).floor(), seconds % 60.0);
 }
 
 pub fn open_image_from_path(path: PathBuf) -> Option<DynamicImage> {
