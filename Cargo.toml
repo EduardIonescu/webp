@@ -1,3 +1,5 @@
+cargo-features = ["profile-rustflags"]
+
 [package]
 name = "image-to-webp"
 version = "0.1.0"
@@ -13,6 +15,5 @@ rayon = "1.10.0"
 opt-level = 3
 lto = "fat"
 codegen-units = 1
-
-[build]
 rustflags = ["-C", "target-cpu=native"]
+
