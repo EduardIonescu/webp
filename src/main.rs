@@ -35,6 +35,9 @@ struct Cli {
 
     #[arg(long, default_value_t = 8)]
     max_depth: u16,
+
+    #[arg(long, default_value_t = 0)]
+    use_initial_if_smaller: u8,
 }
 
 impl Cli {
@@ -81,7 +84,14 @@ struct Depth {
     max: u16,
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() {
+    let result = try_main();
+    if result.is_err() {
+        eprintln!("{:#?}", result.err());
+    }
+}
+
+fn try_main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Cli::parse();
 
     let output_path: PathBuf = args
@@ -91,19 +101,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let input_path: PathBuf = args.input_path().map_err(|error| error).unwrap();
     let config = generate_config(&args);
 
-    let now = Instant::now();
-
     let depth = Depth {
         current: 0,
         max: args.max_depth,
     };
-    let (input_size, output_size) = convert_recursively(&input_path, &output_path, &config, depth);
+
+    let now = Instant::now();
+    let mut all_files: Vec<PathBuf> = Vec::new();
+    flatten_dir(&input_path, &mut all_files, depth);
+
+    let (input_size, output_size, count) = convert_file_all(
+        all_files,
+        &output_path,
+        &config,
+        args.use_initial_if_smaller,
+    );
 
     println!(
-        "Input size: {} -- Output size: {}. Duration: {}",
+        "Input size: {} -- Output size: {}. Duration: {}. Count: {}",
         format_size(input_size),
         format_size(output_size),
-        format_millis(now.elapsed().as_millis() as u64)
+        format_millis(now.elapsed().as_millis() as u64),
+        count
     );
 
     Ok(())
@@ -125,67 +144,24 @@ fn format_size(size: u64) -> String {
 }
 
 /// Returns (input_size, output_size)
-fn convert_recursively(
-    input_path: &PathBuf,
-    output_path: &PathBuf,
-    config: &WebPConfig,
-    depth: Depth,
-) -> (u64, u64) {
-    let mut input_size: u64 = 0;
-    let mut output_size: u64 = 0;
-
-    if depth.current >= depth.max {
-        println!("Max level reached. Returning...");
-        return (input_size, output_size);
-    }
-
+fn flatten_dir(input_path: &PathBuf, all_files: &mut Vec<PathBuf>, depth: Depth) {
     if input_path.is_file() {
-        let converted_file =
-            convert_file(&input_path, &output_path, &config).map_err(|error| error);
-        if converted_file.is_err() {
-            let _ = converted_file.inspect_err(|f| println!("{:?}", f));
-            return (input_size, output_size);
-        }
-
-        input_size += &input_path.metadata().unwrap().len();
-        output_size += converted_file.unwrap();
-    } else {
-        let input_dir_entries: Vec<_> = input_path
-            .read_dir()
-            .map_err(|error| error)
-            .unwrap()
-            .collect();
-
-        let (temp_input_size, temp_output_size) = input_dir_entries
-            .into_par_iter()
-            .map(|path| {
-                if path.is_err() {
-                    return (0, 0);
-                }
-                let path = path.unwrap().path();
-
-                let output_path_with_dir = &output_path.join(&path.file_name().unwrap());
-                let new_depth = Depth {
-                    current: depth.current + 1,
-                    max: depth.max,
-                };
-                return convert_recursively(&path, &output_path_with_dir, config, new_depth);
-            })
-            .reduce(
-                || (input_size, output_size),
-                |input_size_map, output_size_map| {
-                    (
-                        input_size_map.0 + output_size_map.0,
-                        input_size_map.1 + output_size_map.1,
-                    )
-                },
-            );
-
-        input_size += temp_input_size;
-        output_size += temp_output_size;
+        all_files.push(input_path.clone());
+        return;
     }
+    if input_path.is_dir() {
+        for path in input_path.read_dir().unwrap() {
+            if path.is_err() || depth.current + 1 > depth.max {
+                return;
+            }
 
-    return (input_size, output_size);
+            let new_depth = Depth {
+                current: depth.current + 1,
+                max: depth.max,
+            };
+            flatten_dir(&path.unwrap().path(), all_files, new_depth);
+        }
+    }
 }
 
 fn generate_config(args: &Cli) -> WebPConfig {
@@ -203,13 +179,43 @@ fn generate_config(args: &Cli) -> WebPConfig {
     config
 }
 
+fn convert_file_all(
+    input: Vec<PathBuf>,
+    output: &PathBuf,
+    config: &WebPConfig,
+    use_initial_if_smaller: u8,
+) -> (u64, u64, u64) {
+    input
+        .iter()
+        .par_bridge()
+        .map(|path| {
+            let converted_file = convert_file(path, output, config, use_initial_if_smaller);
+            if converted_file.is_err() {
+                eprintln!("{:?}", converted_file.err());
+                return (path.metadata().unwrap().len(), 0, 1);
+            }
+            return (path.metadata().unwrap().len(), converted_file.unwrap(), 1);
+        })
+        .reduce(
+            || (0, 0, 0),
+            |(input_size_0, output_size_0, count_0), (input_size_1, output_size_1, count_1)| {
+                (
+                    input_size_0 + input_size_1,
+                    output_size_0 + output_size_1,
+                    count_0 + count_1,
+                )
+            },
+        )
+}
+
 /// Returns new file size
 fn convert_file(
     input: &PathBuf,
     output: &PathBuf,
     config: &WebPConfig,
+    use_initial_if_smaller: u8,
 ) -> Result<u64, Box<dyn std::error::Error>> {
-    let now = Instant::now();
+    // let now = Instant::now();
 
     let file_name = &input
         .file_stem()
@@ -223,7 +229,7 @@ fn convert_file(
     }
     let img = img.unwrap();
 
-    let result = image_to_webp(img, &config);
+    let result = image_to_webp(img.clone(), &config);
     let webp = result.map_err(|_| "Failed to convert image")?;
 
     let output_path = if !(&output).exists() {
@@ -242,18 +248,26 @@ fn convert_file(
         output.join(file_name).with_extension("webp")
     };
 
-    fs::write(&output_path, &*webp).unwrap();
-    let elapsed_time = now.elapsed();
+    let input_size = input.metadata().unwrap().len();
+    let mut output_size = webp.len() as u64;
 
-    println!(
-        "{:?} - Input: {:.1} KB -> Output: {:.1} KB. Duration: {:?} ms",
-        input.file_name().unwrap(),
-        input.metadata().unwrap().len() as f64 / 1024.0,
-        output_path.metadata().unwrap().len() as f64 / 1024.0,
-        elapsed_time.as_millis()
-    );
+    if use_initial_if_smaller == 1 && input_size < output_size {
+        output_size = input_size;
+        fs::write(&output_path, img.into_bytes()).unwrap();
+    } else {
+        fs::write(&output_path, &*webp).unwrap();
+    }
+    // let elapsed_time = now.elapsed();
 
-    Ok(webp.len() as u64)
+    // println!(
+    //     "{:?} - Input: {:.1} KB -> Output: {:.1} KB. Duration: {:?} ms",
+    //     input.file_name().unwrap(),
+    //     input_size as f64 / 1024.0,
+    //     output_size as f64 / 1024.0,
+    //     elapsed_time.as_millis()
+    // );
+
+    Ok(output_size as u64)
 }
 
 fn format_millis(ms: u64) -> String {
