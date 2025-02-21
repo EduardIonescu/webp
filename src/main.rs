@@ -110,6 +110,10 @@ fn try_main() -> Result<(), Box<dyn std::error::Error>> {
     let mut all_files: Vec<PathBuf> = Vec::new();
     flatten_dir(&input_path, &mut all_files, depth);
 
+    println!(
+        "{0:<30} | {1:<10} | {2:<10} | {3:<10}",
+        "Name", "Input", "Output", "Duration"
+    );
     let (input_size, output_size, count) = convert_file_all(
         all_files,
         &output_path,
@@ -117,11 +121,19 @@ fn try_main() -> Result<(), Box<dyn std::error::Error>> {
         args.use_initial_if_smaller,
     );
 
+    println!("\n--- TOTAL --- ");
     println!(
-        "Input size: {} -- Output size: {}. Duration: {}. Count: {}",
+        "{0:<12} | {1:<12} | {2:<12} | {3:<12} | {4:<12}",
+        "Input Size", "Output Size", "Reduction", "Duration", "Images Count"
+    );
+    let reduction_difference = input_size as f64 - output_size as f64;
+    let reduction_percentage = 100.0 * reduction_difference / input_size as f64;
+    println!(
+        "{0:<12} | {1:<12} | {2:<12} | {3:<12} | {4:<12}",
         format_size(input_size),
         format_size(output_size),
-        format_millis(now.elapsed().as_millis() as u64),
+        format!("{:.1?} %", reduction_percentage),
+        format_millis(now.elapsed().as_millis()),
         count
     );
 
@@ -215,7 +227,7 @@ fn convert_file(
     config: &WebPConfig,
     use_initial_if_smaller: u8,
 ) -> Result<u64, Box<dyn std::error::Error>> {
-    // let now = Instant::now();
+    let now = Instant::now();
 
     let file_name = &input
         .file_stem()
@@ -257,20 +269,20 @@ fn convert_file(
     } else {
         fs::write(&output_path, &*webp).unwrap();
     }
-    // let elapsed_time = now.elapsed();
+    let elapsed_time = now.elapsed();
 
-    // println!(
-    //     "{:?} - Input: {:.1} KB -> Output: {:.1} KB. Duration: {:?} ms",
-    //     input.file_name().unwrap(),
-    //     input_size as f64 / 1024.0,
-    //     output_size as f64 / 1024.0,
-    //     elapsed_time.as_millis()
-    // );
+    println!(
+        "{0:<30} | {1:<10} | {2:<10} | {3:<10}",
+        input.file_name().unwrap().to_string_lossy(),
+        format_size(input_size),
+        format_size(output_size),
+        format_millis(elapsed_time.as_millis())
+    );
 
     Ok(output_size as u64)
 }
 
-fn format_millis(ms: u64) -> String {
+fn format_millis(ms: u128) -> String {
     if ms < 1000 {
         return format!("{} ms", ms);
     }
