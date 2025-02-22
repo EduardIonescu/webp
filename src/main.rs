@@ -1,7 +1,7 @@
 use clap::Parser;
 
 use logging::Logging;
-use std::{fs, path::PathBuf};
+use std::path::PathBuf;
 
 mod args;
 mod file_utils;
