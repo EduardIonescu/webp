@@ -20,7 +20,7 @@ This Rust application recursively converts images within a specified directory (
 2.  **Clone the Repository:**
 
     ```bash
-    git clone [<your-repository-url>](https://github.com/EduardIonescu/webp.git)
+    git clone https://github.com/EduardIonescu/webp.git
     cd webp
     ```
 
