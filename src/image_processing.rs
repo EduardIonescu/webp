@@ -104,10 +104,12 @@ fn convert_file(
 
     if use_initial_if_smaller == 1 && input_size < output_size {
         output_size = input_size;
-        fs::write(&output_path, img.into_bytes()).unwrap();
+        let _ = fs::write(&output_path, img.into_bytes())
+            .map_err(|error| eprintln!("output_path: {:?}. {}", output_path, error));
     } else {
-        fs::write(&output_path, &*webp).unwrap();
-    }
+        let _ = fs::write(&output_path, &*webp)
+            .map_err(|error| eprintln!("output_path: {:?}. {}", output_path, error));
+    };
 
     logging.log_row(
         input.file_name().unwrap().to_string_lossy().to_string(),
