@@ -66,7 +66,7 @@ fn convert_file(
     config: &WebPConfig,
     use_initial_if_smaller: u8,
 ) -> Result<u64, Box<dyn std::error::Error>> {
-    let logging = Logging::start();
+    let logging = Logging::start_row();
 
     let file_name = &input
         .file_stem()

@@ -18,6 +18,12 @@ impl Logging {
         }
     }
 
+    pub fn start_row() -> Self {
+        Self {
+            now: Instant::now(),
+        }
+    }
+
     pub fn log_row(&self, input_file_name: String, input_size: u64, output_size: u64) {
         println!(
             "{0:<30} | {1:<10} | {2:<10} | {3:<10}",
