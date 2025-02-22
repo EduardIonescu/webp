@@ -22,7 +22,7 @@ fn main() {
 }
 
 fn try_main() -> Result<(), Box<dyn std::error::Error>> {
-    let args = args::Cli::try_parse().unwrap();
+    let args = args::Cli::parse();
 
     let output_path: PathBuf = args.output_path().map_err(|error| error).unwrap();
     let input_path: PathBuf = args.input_path().map_err(|error| error).unwrap();
