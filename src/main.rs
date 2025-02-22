@@ -94,10 +94,7 @@ fn main() {
 fn try_main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Cli::parse();
 
-    let output_path: PathBuf = args
-        .output_path()
-        .map_err(|_| "Output file is invalid")
-        .unwrap();
+    let output_path: PathBuf = args.output_path().map_err(|error| error).unwrap();
     let input_path: PathBuf = args.input_path().map_err(|error| error).unwrap();
     let config = generate_config(&args);
 
@@ -105,7 +102,6 @@ fn try_main() -> Result<(), Box<dyn std::error::Error>> {
         current: 0,
         max: args.max_depth,
     };
-
     let now = Instant::now();
     let mut all_files: Vec<PathBuf> = Vec::new();
     flatten_dir(&input_path, &mut all_files, depth);
@@ -115,6 +111,7 @@ fn try_main() -> Result<(), Box<dyn std::error::Error>> {
         "Name", "Input", "Output", "Duration"
     );
     let (input_size, output_size, count) = convert_file_all(
+        input_path,
         all_files,
         &output_path,
         &config,
@@ -192,6 +189,7 @@ fn generate_config(args: &Cli) -> WebPConfig {
 }
 
 fn convert_file_all(
+    input_root: PathBuf,
     input: Vec<PathBuf>,
     output: &PathBuf,
     config: &WebPConfig,
@@ -201,7 +199,14 @@ fn convert_file_all(
         .iter()
         .par_bridge()
         .map(|path| {
-            let converted_file = convert_file(path, output, config, use_initial_if_smaller);
+            let output_path = if path.starts_with(&input_root) {
+                let stripped_path = path.strip_prefix(&input_root).unwrap();
+                &output.join(stripped_path)
+            } else {
+                output
+            };
+
+            let converted_file = convert_file(path, output_path, config, use_initial_if_smaller);
             if converted_file.is_err() {
                 eprintln!("{:?}", converted_file.err());
                 return (path.metadata().unwrap().len(), 0, 1);
@@ -229,6 +234,7 @@ fn convert_file(
 ) -> Result<u64, Box<dyn std::error::Error>> {
     let now = Instant::now();
 
+    println!("{:?}", input);
     let file_name = &input
         .file_stem()
         .ok_or_else(|| format!("The file name: {:?} does not exist!", &input.file_name()))?
